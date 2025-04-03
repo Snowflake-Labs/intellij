@@ -83,7 +83,7 @@ public class BazelRenderJarBuilder implements RenderJarBuilder {
               projectViewSet,
               BlazeCommandName.BUILD,
               context,
-              BlazeInvocationContext.OTHER_CONTEXT);
+              BlazeInvocationContext.QUERY_SYNC_CONTEXT);
 
       String aspectLocation = prepareAspect(context);
       BlazeCommand.Builder builder =
