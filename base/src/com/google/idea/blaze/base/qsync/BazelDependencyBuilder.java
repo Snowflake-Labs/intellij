@@ -266,7 +266,7 @@ public class BazelDependencyBuilder implements DependencyBuilder {
             projectViewSet,
             BlazeCommandName.BUILD,
             context,
-            BlazeInvocationContext.OTHER_CONTEXT);
+            BlazeInvocationContext.QUERY_SYNC_CONTEXT);
 
     final var querySyncFlags = ImmutableList.<String>builder();
     if (invocationFiles.targetPatternFileWorkspaceRelativeFile().isPresent()) {
