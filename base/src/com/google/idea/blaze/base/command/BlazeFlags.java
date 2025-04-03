@@ -90,6 +90,9 @@ public final class BlazeFlags {
             project, projectViewSet, command, context, invocationContext, flags);
       }
     }
+    if (invocationContext.type() == ContextType.QuerySync || invocationContext.type() == ContextType.Sync) {
+      flags.addAll(expandBuildFlags(projectViewSet.listItems(SyncFlagsSection.KEY)));
+    }
 
     return flags;
   }
