@@ -250,7 +250,7 @@ http_archive(
     url = CLION_243_URL,
 )
 
-CLION_251_SHA = "1a8dcdafb91f4ed442f28ca7871562249c31452574a6493207755908dd56eab1"
+CLION_251_SHA = "01ed761971886d29952956091f5c9b77ad4868c62dadd06fd1aeda8df8815e6a"
 
 CLION_251_URL = "https://www.jetbrains.com/intellij-repository/snapshots/com/jetbrains/intellij/clion/clion/251-EAP-SNAPSHOT/clion-251-EAP-SNAPSHOT.zip"
 
