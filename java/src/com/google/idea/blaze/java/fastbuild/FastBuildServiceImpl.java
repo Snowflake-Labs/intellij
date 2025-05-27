@@ -110,7 +110,9 @@ final class FastBuildServiceImpl implements FastBuildService, ProjectComponent {
 
   @Override
   public boolean supportsFastBuilds(BuildSystemName buildSystemName, Kind kind) {
-    return SUPPORTED_KINDS.get(buildSystemName).contains(kind);
+    // SNOW-949516: This feature does not work for us due to insufficient support for JUnit 5 and
+    // remote Java toolchains.  Disable it altogether.
+    return false;
   }
 
   @Override
