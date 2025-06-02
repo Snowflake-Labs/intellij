@@ -183,12 +183,38 @@ public final class BlazeCommandGenericRunConfigurationRunner
           });
     }
 
+    private void addStandaloneRunFlagsIfSingleTestTriggered(BlazeCommand.Builder blazeCommandBuilder) {
+      // Check that only a single target is specified.
+      if (configuration.getTargets().size() != 1) {
+        return;
+      }
+
+      // Check that the target is either a unit or an IT test.
+      final var target = configuration.getTargets().get(0).toString();
+      final var pattern = "^\\/\\/[\\w\\-/]+:[\\w\\-_]+(?:Test|TestIT)$";
+      if (target.matches(pattern)) {
+        // Override the flags in not yet set explicitly.
+        final var args = blazeCommandBuilder.build().toString();
+        if (!args.contains("--test_output")) {
+          blazeCommandBuilder.addBlazeFlags("--test_output=streamed");
+        }
+        if (!args.contains("--strategy")) {
+          blazeCommandBuilder.addBlazeFlags("--strategy=TestRunner=standalone");
+        }
+        if (!args.contains("--cache_test_results")) {
+          blazeCommandBuilder.addBlazeFlags("--cache_test_results=no");
+        }
+      }
+    }
+
     private ProcessHandler getProcessHandlerForTests(
         Project project,
         BlazeCommand.Builder blazeCommandBuilder,
         WorkspaceRoot workspaceRoot,
         BlazeContext context
     ) throws ExecutionException {
+      addStandaloneRunFlagsIfSingleTestTriggered(blazeCommandBuilder);
+      
       // TODO: find proper place to close the result helper (same for BlazeCidrLauncher)
       final var buildResultHelper = new BuildResultHelperBep();
       final var testResultFinderStrategy = new LocalBuildEventProtocolTestFinderStrategy(buildResultHelper.getOutputFile());
