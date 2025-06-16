@@ -16,10 +16,14 @@
 package com.google.idea.blaze.clwb.run;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.idea.blaze.base.command.BlazeCommandName;
 import com.google.idea.blaze.base.command.BlazeInvocationContext;
 import com.google.idea.blaze.base.command.buildresult.GetArtifactsException;
+import com.google.idea.blaze.base.command.buildresult.BuildResult;
+import com.google.idea.blaze.base.command.buildresult.BuildResultHelper;
+import com.google.idea.blaze.base.command.buildresult.BuildResultHelperProvider;
 import com.google.idea.blaze.base.command.buildresult.BuildResultParser;
 import com.google.idea.blaze.base.command.buildresult.bepparser.BuildEventStreamProvider;
 import com.google.idea.blaze.base.model.primitives.Label;
@@ -40,12 +44,19 @@ import com.intellij.execution.runners.ExecutionEnvironment;
 import com.intellij.execution.runners.ExecutionUtil;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.registry.Registry;
+import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.util.PathUtil;
 import com.jetbrains.cidr.execution.CidrCommandLineState;
 
 import javax.annotation.Nullable;
+import java.io.BufferedWriter;
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CancellationException;
 
 /** CLion-specific handler for {@link BlazeCommandRunConfiguration}s. */
@@ -56,6 +67,9 @@ public class BlazeCidrRunConfigurationRunner implements BlazeCommandRunConfigura
   /** Calculated during the before-run task, and made available to the debugger. */
   File executableToDebug = null;
 
+  /** Calculated during the before-run task, and made available to the debugger. */
+  Map<String, String> testEnvironment = null;
+
   BlazeCidrRunConfigurationRunner(BlazeCommandRunConfiguration configuration) {
     this.configuration = configuration;
   }
@@ -63,6 +77,28 @@ public class BlazeCidrRunConfigurationRunner implements BlazeCommandRunConfigura
   @Override
   public RunProfileState getRunProfileState(Executor executor, ExecutionEnvironment env) {
     return new CidrCommandLineState(env, new BlazeCidrLauncher(configuration, this, env));
+  }
+
+  private static Map<String, String> parseEnvironmentFile(File env) throws IOException {
+      // Parses a file that contains a list of environment variables
+      // with the format "key=value\0ey=value\0" per line and returns the content of the
+      // file into a map.
+      ImmutableMap.Builder<String, String> builder = new ImmutableMap.Builder<>();
+      try (BufferedReader reader = new BufferedReader(new FileReader(env))) {
+        String line;
+        while ((line = reader.readLine()) != null) {
+          String[] entries = line.split("\0");
+          for (String entry : entries) {
+            int idx = entry.indexOf('=');
+            if (idx != -1) {
+              String key = entry.substring(0, idx);
+              String value = entry.substring(idx + 1);
+              builder.put(key, value);
+            }
+          }
+        }
+      }
+      return builder.build();
   }
 
   @Override
@@ -73,6 +109,12 @@ public class BlazeCidrRunConfigurationRunner implements BlazeCommandRunConfigura
     }
     try {
       File executable = getExecutableToDebug(env);
+      BlazeCommandName command =
+        ((BlazeCidrRunConfigState) configuration.getHandler().getState()).getCommandState().getCommand();
+      if (BlazeCommandName.TEST.equals(command)) {
+        testEnvironment = getTestEnvironment(env);
+      }
+
       if (executable != null) {
         executableToDebug = executable;
         return true;
@@ -172,6 +214,73 @@ public class BlazeCidrRunConfigurationRunner implements BlazeCommandRunConfigura
       throw new ExecutionException(
           String.format(
               "Failed to get output artifacts when building %s: %s", target, e.getMessage()));
+    }
+  }
+
+  /**
+   * Obtains the details necessary to run a test target outside of Bazel.
+   *
+   * This works by creating a script that extracts environmental information into textual files
+   * and making the test run via this script with {@code --run_under}.
+   *
+   * @throws ExecutionException if there was a Bazel execution error.
+   */
+  private Map<String, String> getTestEnvironment(ExecutionEnvironment env) throws ExecutionException {
+    SaveUtil.saveAllFiles();
+
+    File runUnderScript;
+    File envFile;
+    try {
+        runUnderScript = File.createTempFile("clwb", "-test_env_collect.sh");
+        runUnderScript.setExecutable(true);
+        envFile = File.createTempFile("clwb", "-test_env");
+        FileWriter fileWriter = new FileWriter(runUnderScript, true);
+        BufferedWriter bw = new BufferedWriter(fileWriter);
+        bw.write(
+            String.join(
+	        "\n",
+                "#!/bin/sh",
+                String.format("env -0 > %s", envFile.getAbsolutePath())));
+        bw.close();
+    } catch (IOException e) {
+        throw new ExecutionException(e);
+    }
+
+    ListenableFuture<BuildEventStreamProvider> streamProviderFuture =
+        BlazeBeforeRunCommandHelper.runBlazeCommand(
+            BlazeCommandName.TEST,
+            configuration,
+            ImmutableList.of(
+                "--spawn_strategy=local",
+                "--run_under=" + runUnderScript.getAbsolutePath()),
+            getExtraDebugFlags(env),
+            BlazeInvocationContext.runConfigContext(
+                ExecutorType.fromExecutor(env.getExecutor()), configuration.getType(), true),
+            "Gathering test environment");
+
+    try {
+      BuildResult result =
+          BuildResult.fromExitCode(
+              BuildResultParser.getBuildOutput(streamProviderFuture.get(), Interners.STRING)
+                  .buildResult());
+      if (result.status != BuildResult.Status.SUCCESS) {
+        throw new ExecutionException("Bazel failure gathering test environment");
+      }
+    } catch (InterruptedException | CancellationException e) {
+        streamProviderFuture.cancel(true);
+        throw new RunCanceledByUserException();
+      } catch (java.util.concurrent.ExecutionException e) {
+        throw new ExecutionException(e);
+      } catch (GetArtifactsException e) {
+        throw new ExecutionException(
+            String.format(
+                "Failed to get output artifacts when collecting test environment: %s", e.getMessage()));
+      }
+    LocalFileSystem.getInstance().refreshIoFiles(ImmutableList.of(envFile));
+    try {
+      return parseEnvironmentFile(envFile);
+    } catch (IOException e) {
+      throw new ExecutionException(e);
     }
   }
 
