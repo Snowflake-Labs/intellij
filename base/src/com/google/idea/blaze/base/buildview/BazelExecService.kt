@@ -63,7 +63,7 @@ class BazelExecService(private val project: Project, private val scope: Coroutin
     }
   }
 
-  private suspend fun execute(ctx: BlazeContext, cmdBuilder: BlazeCommand.Builder): Int {
+  private suspend fun execute(ctx: BlazeContext, cmdBuilder: BlazeCommand.Builder, env: Map<String, String> = mapOf()): Int {
     // the old sync view does not use a PTY based terminal, and idk why it does not work on windows :c
     if (BuildViewMigration.present(ctx) && OS.CURRENT != OS.Windows) {
       cmdBuilder.addBlazeFlags("--curses=yes")
@@ -81,6 +81,7 @@ class BazelExecService(private val project: Project, private val scope: Coroutin
       .withExePath(cmd.binaryPath)
       .withParameters(cmd.toArgumentList())
       .withWorkDirectory(root.pathString)
+      .withEnvironment(env)
 
     var handler: OSProcessHandler? = null
     val exitCode = try {
@@ -171,7 +172,7 @@ class BazelExecService(private val project: Project, private val scope: Coroutin
     }
   }
 
-  fun build(ctx: BlazeContext, cmdBuilder: BlazeCommand.Builder): BlazeBuildOutputs.Legacy {
+  fun build(ctx: BlazeContext, cmdBuilder: BlazeCommand.Builder, env: Map<String, String> = mapOf()): BlazeBuildOutputs.Legacy {
     assertNonBlocking()
     LOG.assertTrue(cmdBuilder.name == BlazeCommandName.BUILD)
 
@@ -180,7 +181,7 @@ class BazelExecService(private val project: Project, private val scope: Coroutin
 
       val parseJob = parseEvents(ctx, provider)
 
-      val exitCode = execute(ctx, cmdBuilder)
+      val exitCode = execute(ctx, cmdBuilder, env)
       val result = BuildResult.fromExitCode(exitCode)
 
       parseJob.cancelAndJoin()
