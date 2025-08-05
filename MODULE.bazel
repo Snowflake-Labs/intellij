@@ -183,9 +183,9 @@ http_archive(
 )
 
 # The plugin api for intellij_ce_2025_1. This is required to build IJwB and run integration tests.
-IC_251_SHA = "86dd6617de5054dfbe2150bb005c4739c833adc1fee437d87e698eac03cf15dc"
+IC_251_SHA = "ac530ab969378d739b080989bb726bf24d9971f8942922ab13ddb3bc94f13f3d"
 
-IC_251_URL = "https://www.jetbrains.com/intellij-repository/snapshots/com/jetbrains/intellij/idea/ideaIC/251.14649.49-EAP-SNAPSHOT/ideaIC-251.14649.49-EAP-SNAPSHOT.zip"
+IC_251_URL = "https://www.jetbrains.com/intellij-repository/releases/com/jetbrains/intellij/idea/ideaIC/2025.1.1/ideaIC-2025.1.1.zip"
 
 http_archive(
     name = "intellij_ce_2025_1",
