@@ -29,6 +29,7 @@ import com.google.idea.blaze.base.model.BlazeProjectData;
 import com.google.idea.blaze.base.sync.data.BlazeProjectDataManager;
 import com.google.idea.blaze.base.sync.workspace.ArtifactLocationDecoder;
 import com.google.idea.blaze.base.targetmaps.ReverseDependencyMap;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import java.io.File;
 import java.util.Collection;
@@ -39,6 +40,9 @@ import java.util.function.Predicate;
 
 /** Filters a {@link TargetMap} according to a given filter. */
 public class FilteredTargetMap {
+  private static final Logger logger = Logger.getInstance(FilteredTargetMap.class);
+  private static final ImmutableList<String> TESTLIB_SUFFIXES =
+      ImmutableList.of(".testlib", "-test-lib");
 
   private final Project project;
   private final Multimap<File, TargetKey> rootsMap;
@@ -71,11 +75,13 @@ public class FilteredTargetMap {
 
   private ImmutableSet<TargetIdeInfo> targetsForSourceFilesImpl(
       ImmutableMultimap<TargetKey, TargetKey> rdepsMap, Collection<File> sourceFiles) {
+    logger.info("Processing source files: " + sourceFiles);
     ImmutableSet.Builder<TargetIdeInfo> result = ImmutableSet.builder();
     Set<TargetKey> roots =
         sourceFiles.stream()
             .flatMap(f -> rootsMap.get(f).stream())
             .collect(ImmutableSet.toImmutableSet());
+    logger.info("Found root targets: " + roots);
 
     Queue<TargetKey> todo = Queues.newArrayDeque();
     todo.addAll(roots);
@@ -89,6 +95,27 @@ public class FilteredTargetMap {
       TargetIdeInfo target = targetMap.get(targetKey);
       if (filter.test(target)) {
         result.add(target);
+      }
+
+      // Naming heuristic: if this is a testlib target (e.g., .testlib or -test-lib),
+      // also try to find and add the corresponding test target without the suffix
+      String targetName = targetKey.getLabel().targetName().toString();
+      for (String suffix : TESTLIB_SUFFIXES) {
+        if (targetName.endsWith(suffix)) {
+          logger.info("Found testlib target with suffix '" + suffix + "': " + targetKey.getLabel());
+          String baseTargetName = targetName.substring(0, targetName.length() - suffix.length());
+          TargetKey baseTargetKey =
+              TargetKey.forPlainTarget(targetKey.getLabel().withTargetName(baseTargetName));
+          if (baseTargetKey != null && targetMap.contains(baseTargetKey)) {
+            logger.info("Mapping testlib target to corresponding test target: "
+                + targetKey.getLabel() + " -> " + baseTargetKey.getLabel());
+            todo.add(baseTargetKey);
+          } else {
+            logger.info("No corresponding test target found for: " + targetKey.getLabel()
+                + " (expected: " + baseTargetName + ")");
+          }
+          break; // Only process one suffix match per target
+        }
       }
       todo.addAll(rdepsMap.get(targetKey));
     }
