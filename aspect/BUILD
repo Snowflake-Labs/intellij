@@ -2,7 +2,6 @@
 # Description: Bazel aspect bundled with the Bazel IntelliJ plugin.
 #
 
-load(":flag_hack.bzl", "define_flag_hack")
 load(":build_defs.bzl", "aspect_library")
 
 licenses(["notice"])
@@ -39,7 +38,6 @@ aspect_library(
     files = [
         "artifacts.bzl",
         "fast_build_info_bundled.bzl",
-        "flag_hack.bzl",
         "intellij_info.bzl",
         "intellij_info_bundled.bzl",
         "intellij_info_impl_bundled.bzl",
@@ -89,7 +87,6 @@ _dev_aspect_path = package_name()
 # This genrule is required for the aspect to be valid in all three repositories in which it's used.
 # Changes:
 #   //.../aspect/tools:tool_name -> //:tool_name_bin
-#   //.../aspect:flag_hack -> //:flag_hack
 #   :intellij_info_impl.bzl -> :intellij_info_impl_bundled.bzl
 genrule(
     name = "modify_tools_path",
@@ -97,7 +94,6 @@ genrule(
     outs = ["intellij_info_bundled.bzl"],
     cmd = "cat $(SRCS) >$@ && " +
           "sed -i -e 's,//%s/tools:\" + tool_name,:\" + tool_name + \"_bin\",g' $@ && " % _dev_aspect_path +
-          "sed -i -e 's,//%s:flag_hack,:flag_hack,g' $@  && " % _dev_aspect_path +
           "sed -i -e 's,:intellij_info_impl.bzl,:intellij_info_impl_bundled.bzl,g' $@",
 )
 
@@ -122,8 +118,6 @@ genrule(
     cmd = "cat $(SRCS) >$@ && " +
           "sed -i -e 's,:intellij_info_impl.bzl,:intellij_info_impl_bundled.bzl,g' $@",
 )
-
-define_flag_hack()
 
 aspect_library(
     name = "aspect_template_lib",
